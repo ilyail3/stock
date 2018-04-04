@@ -77,6 +77,13 @@ func priceParser(err error, columnName string) (func(error,map[string]string)(fl
 	}, nil
 }
 
+func reverseStrings(input []string) []string {
+	if len(input) == 0 {
+		return input
+	}
+	return append(reverseStrings(input[1:]), input[0])
+}
+
 func (reader *alphaVantageReader) GetPrice(symbol string) ([]DataPoint, error){
 	url := fmt.Sprintf(
 		"https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=%s&interval=15min&apikey=%s",
@@ -127,7 +134,7 @@ func (reader *alphaVantageReader) GetPrice(symbol string) ([]DataPoint, error){
 
 	sort.Strings(keys)
 
-	for i, key := range keys {
+	for i, key := range reverseStrings(keys) {
 		t,err := time.ParseInLocation("2006-01-02 15:04:05", key, tz)
 		obj := respObj.TimeSeries[key]
 
