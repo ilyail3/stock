@@ -26,7 +26,7 @@ type Reader interface {
 	GetPrice(symbol string) ([]DataPoint, error)
 }
 
-type aVantageMetadata struct {
+type alphaVantageMetadata struct {
 	Information   string `json:"1. Information"`
 	Symbol        string `json:"2. Symbol"`
 	LastRefreshed string `json:"3. Last Refreshed"`
@@ -35,8 +35,8 @@ type aVantageMetadata struct {
 	TimeZone      string `json:"6. Time Zone"`
 }
 
-type aVantageResponse struct {
-	Metadata aVantageMetadata `json:"Meta Data"`
+type alphaVantageResponse struct {
+	Metadata alphaVantageMetadata `json:"Meta Data"`
 	TimeSeries map[string]map[string]string `json:"Time Series (15min)"`
 }
 
@@ -95,7 +95,7 @@ func (reader *alphaVantageReader) GetPrice(symbol string) ([]DataPoint, error){
 	}
 
 	decoder := json.NewDecoder(resp.Body)
-	respObj := &aVantageResponse{}
+	respObj := &alphaVantageResponse{}
 
 	err = decoder.Decode(respObj)
 	if err != nil {
