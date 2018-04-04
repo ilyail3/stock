@@ -1,40 +1,14 @@
-package main
+package stock
 
 import (
-	"net/http"
-	"fmt"
-	"encoding/json"
 	"time"
-	"strconv"
 	"regexp"
-	"os"
+	"fmt"
+	"strconv"
+	"net/http"
+	"encoding/json"
+	"sort"
 )
-
-type AVantageMetadata struct {
-	Information   string `json:"1. Information"`
-	Symbol        string `json:"2. Symbol"`
-	LastRefreshed string `json:"3. Last Refreshed"`
-	Interval      string `json:"4. Interval"`
-	OutputSize    string `json:"5. Output Size"`
-	TimeZone      string `json:"6. Time Zone"`
-}
-
-type AVantageResponse struct {
-	Metadata AVantageMetadata `json:"Meta Data"`
-	TimeSeries map[string]map[string]string `json:"Time Series (15min)"`
-}
-
-type ApplicationConfig interface {
-	GetApiKey() string
-}
-
-type JsonConfig struct {
-	ApiKey string
-}
-
-func(j *JsonConfig) GetApiKey() string{
-	return j.ApiKey
-}
 
 type DataPoint struct {
 	Date time.Time
@@ -46,6 +20,28 @@ type DataPoint struct {
 	Close float64
 
 	Volume float64
+}
+
+type Reader interface {
+	GetPrice(symbol string) ([]DataPoint, error)
+}
+
+type aVantageMetadata struct {
+	Information   string `json:"1. Information"`
+	Symbol        string `json:"2. Symbol"`
+	LastRefreshed string `json:"3. Last Refreshed"`
+	Interval      string `json:"4. Interval"`
+	OutputSize    string `json:"5. Output Size"`
+	TimeZone      string `json:"6. Time Zone"`
+}
+
+type aVantageResponse struct {
+	Metadata aVantageMetadata `json:"Meta Data"`
+	TimeSeries map[string]map[string]string `json:"Time Series (15min)"`
+}
+
+type alphaVantageReader struct {
+	apiKey string
 }
 
 func priceParser(err error, columnName string) (func(error,map[string]string)(float64,error), error) {
@@ -69,7 +65,7 @@ func priceParser(err error, columnName string) (func(error,map[string]string)(fl
 				v, lerr := strconv.ParseFloat(obj, 64)
 
 				if lerr != nil {
-					return 0, fmt.Errorf("Failed to parse %s, value %s", columnName, obj, lerr)
+					return 0, fmt.Errorf("failed to parse %s, value %s", columnName, obj)
 
 				}
 
@@ -77,38 +73,37 @@ func priceParser(err error, columnName string) (func(error,map[string]string)(fl
 			}
 		}
 
-		return 0, fmt.Errorf("missing column for %s", columnName, nil)
+		return 0, fmt.Errorf("missing column for %s", columnName)
 	}, nil
 }
 
-func GetPrice(config ApplicationConfig, symbol string) ([]DataPoint, error) {
+func (reader *alphaVantageReader) GetPrice(symbol string) ([]DataPoint, error){
 	url := fmt.Sprintf(
 		"https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=%s&interval=15min&apikey=%s",
 		symbol,
-		config.GetApiKey())
+		reader.apiKey)
 
 	resp, err := http.Get(url)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to query alphavantage", err)
+		return nil, fmt.Errorf("failed to query alphavantage")
 	}
 
 	decoder := json.NewDecoder(resp.Body)
-	resp_obj := &AVantageResponse{}
+	respObj := &aVantageResponse{}
 
-	err = decoder.Decode(resp_obj)
+	err = decoder.Decode(respObj)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode response from alphavantage", err)
+		return nil, fmt.Errorf("failed to decode response from alphavantage")
 	}
 
-	tz,err := time.LoadLocation(resp_obj.Metadata.TimeZone)
+	tz,err := time.LoadLocation(respObj.Metadata.TimeZone)
 
 	if err != nil {
-		return nil, fmt.Errorf("cannot load timezone for:%s", resp_obj.Metadata.TimeZone, err)
+		return nil, fmt.Errorf("cannot load timezone for:%s", respObj.Metadata.TimeZone)
 	}
 
-	result := make([]DataPoint, len(resp_obj.TimeSeries))
-	i := 0
+	result := make([]DataPoint, len(respObj.TimeSeries))
 
 	closeParser,err := priceParser(err, "close")
 	openParser,err := priceParser(err, "open")
@@ -122,11 +117,22 @@ func GetPrice(config ApplicationConfig, symbol string) ([]DataPoint, error) {
 		return nil, err
 	}
 
-	for key, obj := range resp_obj.TimeSeries {
+	keys := make([]string, len(respObj.TimeSeries))
+
+	i := 0
+	for key := range respObj.TimeSeries{
+		keys[i] = key
+		i ++
+	}
+
+	sort.Strings(keys)
+
+	for i, key := range keys {
 		t,err := time.ParseInLocation("2006-01-02 15:04:05", key, tz)
+		obj := respObj.TimeSeries[key]
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse date:%s", key, err)
+			return nil, fmt.Errorf("failed to parse date:%s", key)
 		}
 
 		result[i].Date = t.UTC()
@@ -142,45 +148,11 @@ func GetPrice(config ApplicationConfig, symbol string) ([]DataPoint, error) {
 		if err != nil {
 			return nil, err
 		}
-
-		i++
 	}
 
 	return result, nil
 }
 
-func readConfig(fileName string) (ApplicationConfig,error) {
-	f, err := os.Open(fileName)
-	if err != nil {
-		return nil, err
-	}
-
-	defer f.Close()
-
-	conf := &JsonConfig{}
-	decoder := json.NewDecoder(f)
-	err = decoder.Decode(conf)
-
-	if err != nil {
-		return nil, err
-	}
-	return conf, nil
-}
-
-
-func main(){
-	config, err := readConfig("config.json")
-	fmt.Printf("api key:%s", config.GetApiKey())
-
-	if err != nil {
-		panic(err)
-	}
-
-	r, err := GetPrice(config, "TSLA")
-
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println(r)
+func AlphaAdvantageReader(apiKey string) Reader{
+	return &alphaVantageReader{ apiKey:apiKey }
 }
