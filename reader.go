@@ -50,7 +50,6 @@ func priceParser(err error, columnName string) (func(error,map[string]string)(fl
 	}
 
 	r,err := regexp.Compile("^[0-9]+\\. " + regexp.QuoteMeta(columnName) + "$")
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile price parser")
 	}
@@ -62,11 +61,10 @@ func priceParser(err error, columnName string) (func(error,map[string]string)(fl
 
 		for key, obj := range dataMap{
 			if r.MatchString(key) {
-				v, lerr := strconv.ParseFloat(obj, 64)
+				v, err := strconv.ParseFloat(obj, 64)
 
-				if lerr != nil {
+				if err != nil {
 					return 0, fmt.Errorf("failed to parse %s, value %s", columnName, obj)
-
 				}
 
 				return v, nil
